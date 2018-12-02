@@ -15,7 +15,7 @@ class LandedCostVoucher(Document):
 		for pr in self.get("purchase_receipts"):
 			if pr.receipt_document_type and pr.receipt_document:
 				pr_items = frappe.db.sql("""select pr_item.item_code, pr_item.description,
-					pr_item.qty, pr_item.base_rate, pr_item.base_amount, pr_item.name, pr_item.cost_center
+					pr_item.qty, pr_item.base_rate, pr_item.base_amount, pr_item.name, 						pr_item.cost_center,pr_item.gross_weight_lbs
 					from `tab{doctype} Item` pr_item where parent = %s
 					and exists(select name from tabItem where name = pr_item.item_code and is_stock_item = 1)
 					""".format(doctype=pr.receipt_document_type), pr.receipt_document, as_dict=True)
@@ -32,6 +32,8 @@ class LandedCostVoucher(Document):
 					item.receipt_document_type = pr.receipt_document_type
 					item.receipt_document = pr.receipt_document
 					item.purchase_receipt_item = d.name
+					item.gross_weight=float(d.qty)*float(d.gross_weight_lbs)
+
 
 	def validate(self):
 		self.check_mandatory()
@@ -72,8 +74,12 @@ class LandedCostVoucher(Document):
 
 	def validate_applicable_charges_for_item(self):
 		based_on = self.distribute_charges_based_on.lower()
+		if based_on=="gross weight":
+			total = sum([flt(d.get('gross_weight')) for d in self.get("items")])
+		else:
+			total = sum([flt(d.get(based_on)) for d in self.get("items")])
+			
 		
-		total = sum([flt(d.get(based_on)) for d in self.get("items")])
 		
 		if not total:
 			frappe.throw(_("Total {0} for all items is zero, may be you should change 'Distribute Charges Based On'").format(based_on))

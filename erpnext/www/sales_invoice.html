@@ -1,0 +1,464 @@
+{% extends "templates/web.html" %}
+{% block style %}
+    <link rel="stylesheet" href="//code.jquery.com/ui/1.12.1/themes/base/jquery-ui.css">
+{% endblock %}
+{% block page_content %}
+<script>
+frappe.ready(function() {
+        var city_name = frappe.utils.get_url_arg("city_name");
+        var delivery_date = frappe.utils.get_url_arg("delivery_date");
+        var limit = frappe.utils.get_url_arg("limit");
+        var status = frappe.utils.get_url_arg("status");
+        var vehicle = frappe.utils.get_url_arg("vehicle");
+        var driver = frappe.utils.get_url_arg("driver");
+        $(".city_name").val(city_name);
+
+        $.ajax({
+            url: '/api/resource/Vehicle/?fields=["name"]&limit_page_length=0',
+            type: 'get',
+            dataType: "json",
+            success: function(r) {
+                var optn = '<option value="">Select Vehicle</option>';
+
+                for (i = 0; i < r.data.length; i++)
+                {
+                        if(vehicle == r.data[i]['name']) { var selec = "selected='selected'"; } else { var selec = ""; }
+                        optn += '<option '+selec+' value="' + r.data[i]['name'] + '">' + r.data[i]['name'] + '</option>';
+
+                }
+                $("#vehicle_number").html(optn);
+                }
+        });
+       
+	   $.ajax({
+            url: '/api/resource/Employee/?fields=["name","employee_name"]&limit_page_length=0',
+            type: 'get',
+            dataType: "json",
+            success: function(r) {
+                var optn = '<option value="">Select Driver</option>';
+                for (i = 0; i < r.data.length; i++)
+                        {
+                                if(driver == r.data[i]['name']) { var selec = "selected=selected"; } else { var selec = ""; }
+                                optn += '<option '+selec+' value="' + r.data[i]['name'] + '">' + r.data[i]['employee_name'] + '</option>';
+                        }
+                        $("#driver").html(optn);
+                }
+        });
+		
+		
+	$.ajax({
+            url: '/api/resource/Vehicle/?fields=["name"]&limit_page_length=0',
+            type: 'get',
+            dataType: "json",
+            success: function(r) {
+                var optn = '<option value="">Select Vehicle</option>';
+				var optn1 = '<option value="">Select Vehicle</option>';
+
+		for (i = 0; i < r.data.length; i++) 
+		{
+			if(vehicle == r.data[i]['name']) { var selec = "selected='selected'"; } else { var selec = ""; }
+			optn += '<option '+selec+' value="' + r.data[i]['name'] + '">' + r.data[i]['name'] + '</option>';
+			optn1 += '<option  value="' + r.data[i]['name'] + '">' + r.data[i]['name'] + '</option>';
+			
+		}
+		$("#vehicle_number").html(optn);
+		$("#vehicle_number1").html(optn1);
+		}
+	});
+	$.ajax({
+            url: '/api/resource/Employee/?fields=["name","employee_name"]&limit_page_length=0',
+            type: 'get',
+            dataType: "json",
+            success: function(r) {
+                var optn = '<option value="">Select Driver</option>';
+                var optn1 = '<option value="">Select Driver</option>';
+		for (i = 0; i < r.data.length; i++) 
+			{
+				if(driver == r.data[i]['name']) { var selec = "selected=selected"; } else { var selec = ""; }
+				optn += '<option '+selec+' value="' + r.data[i]['name'] + '">' + r.data[i]['employee_name'] + '</option>';
+				optn1 += '<option value="' + r.data[i]['name'] + '">' + r.data[i]['employee_name'] + '</option>';
+			}
+			$("#driver").html(optn);
+			$("#driver1").html(optn1);
+		}
+	});
+		
+        if(city_name || delivery_date || status || vehicle || driver) {
+        $(".search-results").html("{{ _('Search results for') }}: <font size='2'>" + decodeURIComponent('<b>City:</b> ' +city_name +',<b> Posting Date </b> '+ delivery_date +' ,<b> Status:</b> '+ status +',<b> Vehicle Number:</b> ' + vehicle +',<b> Driver: </b> ' + driver ) + '</font>');
+        $(".search-results1").html( "<font size='2'><table  style=''  border='0' width='100%'>" +decodeURIComponent('<tr><td width="200px"><b>City:</b> ' +city_name +'</td><td width="200px"><b> Delivery Date </b> '+ delivery_date +' </td><td width="200px"><b> Status:</b> '+ status +'</td><td width="200px"> <b> Vehicle Number:</b> ' + vehicle +'</td><td width="200px"><b> Driver: </b> ' + driver + '</td></tr>') + '</table></font>');
+        }
+		
+        window.city_name = city_name;
+        window.delivery_date = delivery_date;
+        window.start = 0;
+        window.vehicle = vehicle;
+        window.driver = driver;
+
+        var d = new Date();
+        var mnth = d.getMonth()+1;
+        var dy = d.getDate();
+        if (mnth<10) {
+           mnth = "0"+mnth;
+        }
+        if (dy<10) {
+           dy = "0"+dy;
+        }
+
+        if(delivery_date) {
+                window.delivery_date = delivery_date;
+        }
+        else {
+                window.delivery_date = d.getFullYear() + "-" + mnth + "-" + dy;
+        }
+        $(".delivery_date").val(window.delivery_date);
+
+        if(limit) {
+                window.limit = limit;
+        }
+        else {
+                 window.limit = 1000;
+        }
+        if(status) {
+                window.status = status;
+        } else {
+                window.status = "";
+        }
+                $("#status").val(window.status);
+
+		$(".so_url").html("<a  class='btn btn-default'  href='/sales_order?vehicle="+vehicle+"&driver="+driver+"&city_name="+city_name+"&delivery_date="+delivery_date+"&status='> Sales Order </a>");
+		
+        frappe.call({
+                type: "GET",
+                method: "erpnext.www.sales_invoice.get_sales_order",
+                args: {
+                        city_name: window.city_name,
+                        delivery_date: window.delivery_date,
+                        limit: window.limit,
+                        status: window.status,
+                        vehicle: window.vehicle,
+                        driver: window.driver
+                },
+                callback: function(r) {
+                         var trHTML = "";
+                        var trHTML1 = "";
+						var total_total_boxes = 0;
+						var total_total_pallets = 0;
+						
+                       $.each(r.message, function(index, record) {
+                               if( record.address_title == null ) { record.address_title = ''; }
+                                if( record.address_line1 == null ) { record.address_line1 = ''; }
+                                if( record.city == null ) { record.city = ''; }
+								if( record.phone == null ) { record.phone = ''; }
+                                if( record.delivery_date == null ) { record.delivery_date = ''; }
+								if( record.driver == null ) { record.driver = ''; }
+                                if( record.vehicle == null ) { record.vehicle = ''; }
+								if( record.total_boxes == null || isNaN(record.total_boxes) ) { record.total_boxes = 0; } else {  record.total_boxes = parseFloat(record.total_boxes).toFixed(2); }
+								if( record.total_pallets == null || isNaN(record.total_pallets) ) { record.total_pallets = 0; } else {
+								record.total_pallets = parseFloat(record.total_pallets).toFixed(2); }
+                               if( record.latitude != null )
+                                 {
+                                     trHTML += "<tr><td>" + record.address_title + " " +record.address_line1 + "</td><td>" + record.latitude  + "</td><td>" + record.longitude + "</td><td>" + (index+1) + "</td></tr>";
+                                }
+							trHTML1 += "<tr><td class='dispnone'><input name='selector[]' id='Checkbox"+(index+1)+"' class='Checkbox' type='checkbox' value='"+record.name+"' /> </td><td class='index'>" + (index+1) + "</td><td><a class='hidelink' style='color:black !important; text-decoration:none !important;' title='Click to View Invoice' target='_blank' href='/desk#Form/Sales Invoice/"+record.name+"'>" + record.name + "</a><input type='hidden' name='order_number' id='order_number'  value='" + record.name + "'></td><td>" + record.address_title + " - " + record.address_line1 + " " + record.phone + "</td><td>" + record.driver + "</td><td>" + record.vehicle + "</td><td>" + record.city + "</td><td>" + record.total_boxes + "</td><td>" + record.total_pallets + "<input type='hidden' name='total_pallets' id='total_pallets'  class='total_pallets'  value='" + record.total_pallets + "'><input type='hidden' name='total_boxes' id='total_boxes' class='total_boxes'  value='" + record.total_boxes + "'></td></tr>";
+							total_total_boxes = total_total_boxes + parseFloat(record.total_boxes);
+							total_total_pallets = total_total_pallets + parseFloat(record.total_pallets);
+								
+                         });
+						trHTML1 += "<tr class='dispnone'><th class='dispnone'></th><th></th><th></th><th></th><th></th><th></th><th></th><th style='text-align:right !important;'>"+total_total_boxes.toFixed(2)+"</th><th style='text-align:right !important;'>"+total_total_pallets.toFixed(2)+"</th></tr></tbody>";
+                        $("#geocode").append(trHTML);
+                        $("#sales_order_list").append(trHTML1);
+                        
+						
+						var newArray = [];
+                            $("table#geocode tr").each(function(){
+                                                                var tempArray = [];
+                                $(this).find('td').each(function(){
+                                tempArray.push($(this).text());
+                                });
+                             newArray.push(tempArray);
+                         });
+
+                        var locations = newArray;
+
+                                                var map = new google.maps.Map(document.getElementById('map'), {
+                                                                                zoom: 12,
+                                        center: new google.maps.LatLng(43.6456576,-79.6619449),
+                                        mapTypeId: google.maps.MapTypeId.ROADMAP
+                                       });
+
+                        var infowindow = new google.maps.InfoWindow();
+
+                        var pinImage = new google.maps.MarkerImage("http://www.googlemapsmarkers.com/v1/009900/");
+
+                        var marker = new google.maps.Marker({
+                                                                                position: new google.maps.LatLng(43.6456576,-79.6619449),
+                                                                                icon: pinImage,
+                                                                                map: map
+                                                                                });
+
+                        google.maps.event.addListener(marker, 'click', (function(marker, i) {
+                                return function() {
+                                    infowindow.setContent("Sundine Produce");
+                                                                        infowindow.open(map, marker);
+                                }
+                            })(marker, i));
+                            var i;
+
+                            var latlngbounds = new google.maps.LatLngBounds();
+
+                            for (i = 0; i < locations.length; i++)
+                                                        {
+                                marker = new google.maps.Marker({
+                                                                                        position: new google.maps.LatLng(locations[i][1], locations[i][2]),
+                                                                                        map: map
+                                                                                        });
+
+                                                                google.maps.event.addListener(marker, 'click', (function(marker, i) {
+
+                                                                var distance = (google.maps.geometry.spherical.computeDistanceBetween(new google.maps.LatLng(43.6456576,-79.6619449), new google.maps.LatLng(locations[i][1], locations[i][2])) / 1000).toFixed(2);
+
+                                                                return function() {
+
+                                                                                infowindow.setContent(locations[i][0] + " <br /> Distance From Sundine Produce: " + distance + "kms ");
+
+                                                                                infowindow.open(map, marker);
+                                                                                                                                                                                                                                                                                                }
+                                                                                                                                                                                                                                                                                                })(marker, i));
+
+                                                                latlngbounds.extend(marker.position);
+                                                        }
+                            var bounds = new google.maps.LatLngBounds();
+                            map.setCenter(latlngbounds.getCenter());
+                            map.fitBounds(latlngbounds);
+						
+						
+						var fixHelperModified = function(e, tr) {
+                                                                var $originals = tr.children();
+                                                                var $helper = tr.clone();
+                                                                $helper.children().each(function(index) {
+                                                                        $(this).width($originals.eq(index).width())
+                                                                });
+                                                                return $helper;
+                                                        },
+                                                        updateIndex = function(e, ui) {
+                                                                $('td.index', ui.item.parent()).each(function (i) {
+                                                                        $(this).html(i + 1);
+                                                                });
+                                                        };
+
+                                                $("#sales_order_list tbody").sortable({
+                                                        helper: fixHelperModified,
+                                                        stop: updateIndex
+                                                }).disableSelection();
+												
+								 $('.Checkbox').change(function(){ //".checkbox" change 
+									if($('.Checkbox:checked').length == $('.Checkbox').length){
+										   $('.checked_all').prop('checked',true);
+									}else{
+										   $('.checked_all').prop('checked',false);
+									}
+								});
+                    }
+
+        });
+});
+</script>
+
+<div class="row">
+    <div class="hero">
+        <h1 class="text-center"> Sale Invoice <span style="float:right"><a class='btn btn-default' href="/driver_location">Driver Location</a></span><span class="so_url" style="float:right"></span></h1>
+        <form id="search_form" action="" method="get">
+            <table id="sales_order_search" border="0" cellpadding="0" cellspacing="0" width="100%"  class="table table-hover" >
+                <tr>
+                    <th>
+                        <select name="vehicle" class="form-control"  id="vehicle_number"  class="vehicle_number">
+                        </select>
+                    </th>
+                    <th>
+                        <select name="driver" class="form-control"  id="driver" class="driver">
+                        </select>
+                   </th>
+                    <th>
+                                                <input name="city_name" type="text" placeholder="Enter City" class="city_name form-control"  />
+                                        </th>
+                    <th>
+                                                <input data-fieldtype="Date"  name="delivery_date" type="text" id="datepicker" class="delivery_date form-control"  placeholder="Select Posting Date" />
+                                        </th>
+                     <th>
+                        <select name="status" class="form-control"  id="status">
+                             <option value="">Show All</option>
+                            <option value="Paid">Paid</option>
+                            <option value="Unpaid">Unpaid</option>
+                            <option value="Submitted">Submitted</option>
+                            <option value="Overdue">Overdue</option>
+                            <option value="Return">Return</option>
+                            <option value="Credit Note Issued">Credit Note Issued</option>
+                            <option value="Draft">Draft</option>
+						</select>
+                    </th>
+                    <th>
+                                                <button type="submit"  class="btn btn-success btn-request">Search</button>
+                                        </th>
+                </tr>
+            </table>
+        </form>
+        <table id="geocode" style="display:none" >
+        </table>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-sm-12">
+        <div id="map" style="min-height:400px ; width:100%;"></div>
+    </div>
+	<div class="col-sm-12" style="display:none;">
+        <br />
+			<span id="loadDV">
+				<form id="search_form1" action="" method="get">
+					<b>Allocate Vehicle or Driver to Sales Order (if not allocated before).</b>
+					<table border="0" cellpadding="0" cellspacing="0" width="100%"  class="table table-hover" >
+						<tr>
+							<th>
+								<select name="vehicle_number1" class="form-control"  id="vehicle_number1"  class="vehicle_number1">
+								</select>
+							</th>
+							<th>
+								<select name="driver1" class="form-control"  id="driver1" class="driver">
+								</select> 
+							</th>
+							<th>
+								<input type='button' class='btn btn-primary' value='Update'   onClick='updateDv()'   id='updateDV' name='updateDV'>
+							</th>
+						</tr>
+				   </table>
+			   </form>
+			</span>
+		<br />
+    </div>
+    <div class="col-sm-12">
+        <input type='button' class='btn btn-primary' value='Print Sales Invoice' onClick='print_all()'  id='print' name='print'>
+        <input type='button' class='btn btn-primary' value='Print Summary' onClick='printFunc()'  id='print_history' name='print_histor'>
+        <div id="print_his">
+         <div class="search-results1"></div>
+            <table id="sales_order_list" border="0" cellpadding="0" cellspacing="0" width="100%"  class="table table-hover" >
+                                <thead>
+                                        <tr  id="sales_order_list_tr1"><th class="dispnone"><input name="product_all" class="checked_all" type="checkbox"></th><th>S No.</th><th>Invoice Number</th><th>Customer Name - Address</th><th>Driver</th><th>Vehicle</th><th>City</th><th>Boxes</th><th>Pallets</th></tr>
+                                </thead>
+                                <tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block script %}
+<script src="http://maps.google.com/maps/api/js?key=AIzaSyDxL9JlTGKTrfQXB3F75jJsNL9K8m8GnuQ&libraries=geometry" type="text/javascript"></script>
+
+<script src="http://code.jquery.com/ui/1.12.1/jquery-ui.js"></script>
+<script type="text/javascript">
+ $(document).ready(function() {
+    $( "#datepicker" ).datepicker({ dateFormat: "yy-mm-dd" });
+});
+
+$('.checked_all').on('change', function() {     
+                $('.Checkbox').prop('checked', $(this).prop("checked"));              
+        });
+
+function updateDv()
+{
+    var v = 0;
+	
+	var vehicle_number1 = $("#vehicle_number1").val();
+	var driver1 = $("#driver1").val();
+	//if(!vehicle_number1 || vehicle_number1 == "") { alert("Please select vehicle."); return false; }
+	//if(!driver1 || driver1 == "") { alert("Please select Driver."); return false; }
+	
+	$('.Checkbox:checked').each(function(i){
+		var name = {'name': this.value, 'vehicle': vehicle_number1,'driver': driver1};
+		
+		frappe.call({
+                type: "GET",
+                method: "erpnext.www.sales_invoice.updt_sales_order",
+                args: {
+                        'doctype': name
+                },
+                callback: function(r) 
+				{
+					console.log(r);
+				}
+		});
+		
+		 v = v + 1;
+    });
+	
+	if( v == 0 )
+	{
+		alert("Please check sales order.");
+		return false;
+	}
+}
+		
+function print_all()
+{
+    var values = [];
+	var v = 0;
+		
+	$('.Checkbox:checked').each(function(i){
+		values.push('"' + this.value + '"');
+		v = v + 1;
+    });
+		
+	if(v == 0) 
+	{
+		$("input[name=order_number]").each(function(){
+			 values.push('"' + this.value + '"');
+		});
+	}
+        var URI = encodeURI('/api/method/frappe.utils.print_format.download_multi_pdf?doctype=Sales Invoice&name=[' + values + ']&format=NF - SINV&no_letterhead=1');
+        window.open(URI, '_blank');
+}
+function printFunc() {
+	var v = 0;
+	
+	$('.Checkbox:checked').each(function(i){
+		v = v + 1;
+	});
+	
+	if(v == 0) { $("#sales_order_list tr").removeClass("dispnone");	$("#sales_order_list tr:last").addClass("dispnone");	}
+	else 
+	{
+		$("#sales_order_list tr").addClass("dispnone");
+		var total_total_pallets = 0;
+		var total_total_boxes = 0;
+		$('.Checkbox:checked').each(function(i){
+			$(this).parents('tr').removeClass("dispnone");
+			total_total_boxes = total_total_boxes + parseFloat($(this).parents('tr').find('.total_boxes').val());
+			total_total_pallets = total_total_pallets + parseFloat($(this).parents('tr').find('.total_pallets').val());
+		});
+		$("#sales_order_list").append("<tr class='dispnone'><th class='dispnone'></th><th></th><th></th><th></th><th></th><th></th><th></th><th style='text-align:right !important;'>"+total_total_boxes.toFixed(2)+"</th><th style='text-align:right !important;'>"+total_total_pallets.toFixed(2)+"</th></tr>");
+		$("#sales_order_list_tr1").removeClass("dispnone");
+		
+	}
+
+    var divToPrint = document.getElementById('print_his');
+    var htmlToPrint = '' +
+        '<style type="text/css"> .Checkbox, .dispnone { display:none;}' +
+        ' th, td {' +
+        'border:1px solid #000;' +
+        'padding:0.5em;' +
+        '@page { size: auto;  margin: 0mm;' +
+        '} .hidelink { color:black !important; text-decoration:none !important; } ' +
+ '</style>';
+    htmlToPrint += divToPrint.outerHTML;
+    newWin = window.open("");
+    newWin.document.write("<h3 align='center'>Sales Invoice Summary</h3>");
+    newWin.document.write(htmlToPrint);
+    newWin.print();
+    newWin.close();
+		if(v > 0) 
+		{
+			$("#sales_order_list tr:last").remove();
+		}
+    }
+</script>
+{% endblock %}

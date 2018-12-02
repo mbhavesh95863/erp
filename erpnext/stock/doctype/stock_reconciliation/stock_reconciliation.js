@@ -23,30 +23,17 @@ frappe.ui.form.on("Stock Reconciliation", {
 				return erpnext.queries.warehouse(frm.doc);
 			});
 		}
-	},
-
-	refresh: function(frm) {
-		if(frm.doc.docstatus < 1) {
-			frm.add_custom_button(__("Items"), function() {
-				frm.events.get_items(frm);
-			});
-		}
-
-		if(frm.doc.company) {
-			frm.trigger("toggle_display_account_head");
-		}
-	},
-
-	get_items: function(frm) {
-		frappe.prompt({label:"Warehouse", fieldtype:"Link", options:"Warehouse", reqd: 1},
-			function(data) {
+		if(frm.doc.__islocal)
+		{
 				frappe.call({
 					method:"erpnext.stock.doctype.stock_reconciliation.stock_reconciliation.get_items",
 					args: {
-						warehouse: data.warehouse,
+						warehouse:'Sundine Kestrel- . - .',
 						posting_date: frm.doc.posting_date,
 						posting_time: frm.doc.posting_time
 					},
+					freeze:true,
+					freeze_message:"Fetching Items..",
 					callback: function(r) {
 						var items = [];
 						frm.clear_table("items");
@@ -57,6 +44,55 @@ frappe.ui.form.on("Stock Reconciliation", {
 							if(!d.valuation_rate) d.valuation_rate = null;
 						}
 						frm.refresh_field("items");
+					}
+				});
+				frm.set_value("warehouse","Sundine Kestrel- . - .")
+		}
+	},
+
+	refresh: function(frm) {
+		if(frm.doc.docstatus < 1) {
+			frm.add_custom_button(__("Filters"), function() {
+				frm.events.get_items(frm);
+			});
+		}
+
+		if(frm.doc.company) {
+			frm.trigger("toggle_display_account_head");
+		}
+	},
+
+	get_items: function(frm) {
+		frappe.prompt([{label:"Warehouse", fieldtype:"Link", options:"Warehouse", reqd: 1,default:"Sundine Kestrel- . - ."},{label:"Item Code", fieldtype:"Link", options:"Item"},{label:"Item Group", fieldtype:"Link", options:"Item Group"},{label:"Item Status", fieldtype:"Select", options:"Enabled\nDisabled"}],
+			function(data) {
+				frappe.call({
+					method:"erpnext.stock.doctype.stock_reconciliation.stock_reconciliation.get_items",
+					args: {
+						warehouse: data.warehouse,
+						posting_date: frm.doc.posting_date,
+						posting_time: frm.doc.posting_time,
+						item_code:data.item_code,
+						enbl_dsbl:data.item_status,
+						item_group:data.item_group
+						
+					},
+					callback: function(r) {
+						if(!r)
+						{
+							console.log("test")
+						}
+						else{
+						var items = [];
+						frm.clear_table("items");
+						for(var i=0; i< r.message.length; i++) {
+							var d = frm.add_child("items");
+							$.extend(d, r.message[i]);
+							if(!d.qty) d.qty = null;
+							if(!d.valuation_rate) d.valuation_rate = null;
+							d.adj_quantity=0.0
+						}
+						frm.refresh_field("items");
+						}
 					}
 				});
 			}

@@ -169,25 +169,21 @@ erpnext.utils.validate_mandatory = function(frm, label, value, trigger_on) {
 }
 
 erpnext.utils.get_shipping_address = function(frm, callback){
-	if (frm.doc.company) {
-		frappe.call({
-			method: "frappe.contacts.doctype.address.address.get_shipping_address",
-			args: {
-				company: frm.doc.company,
-				address: frm.doc.shipping_address
-			},
-			callback: function(r){
-				if(r.message){
-					frm.set_value("shipping_address", r.message[0]) //Address title or name
-					frm.set_value("shipping_address_display", r.message[1]) //Address to be displayed on the page
-				}
-
-				if(callback){
-					return callback();
-				}
+	frappe.call({
+		method: "frappe.contacts.doctype.address.address.get_shipping_address",
+		args: {
+			company: frm.doc.company,
+			address: frm.doc.shipping_address
+		},
+		callback: function(r){
+			if(r.message){
+				frm.set_value("shipping_address", r.message[0]) //Address title or name
+				frm.set_value("shipping_address_display", r.message[1]) //Address to be displayed on the page
 			}
-		});
-	} else {
-		frappe.msgprint(__("Select company first"));
-	}
+
+			if(callback){
+				return callback();
+			}
+		}
+	});
 }

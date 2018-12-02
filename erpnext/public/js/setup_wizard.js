@@ -138,15 +138,10 @@ erpnext.setup.slides_settings = [
 
 		validate: function () {
 			// validate fiscal year start and end dates
-			const invalid = this.values.fy_start_date == 'Invalid date' ||
-				this.values.fy_end_date == 'Invalid date';
-			const start_greater_than_end = this.values.fy_start_date > this.values.fy_end_date;
-
-			if (invalid || start_greater_than_end) {
+			if (this.values.fy_start_date == 'Invalid date' || this.values.fy_end_date == 'Invalid date') {
 				frappe.msgprint(__("Please enter valid Financial Year Start and End Dates"));
 				return false;
 			}
-
 			return true;
 		},
 

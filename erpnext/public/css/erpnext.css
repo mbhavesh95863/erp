@@ -365,3 +365,6 @@ body[data-route="pos"] .collapse-btn {
 .leaderboard .list-item_content {
   padding-right: 45px;
 }
+.static-area div , .static-area  { text-align: center !important; }
+input[data-fieldname="item_name"] .static-area , input[data-fieldname="item_name"] .static-area div  { text-align: left !important; }
+div[data-fieldname="item_name"] .static-area , div[data-fieldname="item_name"] .static-area div  { text-align: left !important; }

@@ -29,7 +29,6 @@ class calculate_taxes_and_totals(object):
 			self.set_item_wise_tax_breakup()
 
 	def _calculate(self):
-		self.validate_conversion_rate()
 		self.calculate_item_values()
 		self.initialize_taxes()
 		self.determine_exclusive_rate()
@@ -38,7 +37,6 @@ class calculate_taxes_and_totals(object):
 		self.manipulate_grand_total_for_inclusive_tax()
 		self.calculate_totals()
 		self._cleanup()
-		self.calculate_total_net_weight()
 
 	def validate_conversion_rate(self):
 		# validate conversion rate
@@ -70,8 +68,18 @@ class calculate_taxes_and_totals(object):
 						if item.rate_with_margin > 0 else item.rate
 
 				item.net_rate = item.rate
-				item.amount = flt(item.rate * item.qty,	item.precision("amount"))
-				item.net_amount = item.amount
+				if item.doctype=="Purchase Order Item":
+					item.amount = flt(flt(item.box_unit_rate)*flt(item.box),item.precision("amount"))
+					item.net_amount = item.amount
+				elif item.doctype=="Purchase Invoice Item":
+					if int(item.credits)>0:
+						item.amount = flt(flt(item.box_rate)*(flt(item.received_box)-flt(item.credits)),item.precision("amount"))
+					else:
+						item.amount = flt(flt(item.box_rate)*flt(item.received_box),item.precision("amount"))
+						item.net_amount = item.amount
+				else:
+					item.amount = flt(item.rate * item.qty,	item.precision("amount"))
+					item.net_amount = item.amount
 
 				self._set_in_company_currency(item, ["price_list_rate", "rate", "net_rate", "amount", "net_amount"])
 
@@ -165,14 +173,21 @@ class calculate_taxes_and_totals(object):
 			return tax.rate
 
 	def calculate_net_total(self):
-		self.doc.total = self.doc.base_total = self.doc.net_total = self.doc.base_net_total = 0.0
+		self.doc.total = self.doc.base_total = self.doc.net_total = self.doc.base_net_total =self.doc.credit_total_amt= 0.0
 		for item in self.doc.get("items"):
 			self.doc.total += item.amount
 			self.doc.base_total += item.base_amount
 			self.doc.net_total += item.net_amount
 			self.doc.base_net_total += item.base_net_amount
+			if self.doc.doctype=="Purchase Receipt":
+				self.doc.credit_total_amt += float(item.credits)*item.box_unit_rate
+
+		if self.doc.doctype=="Purchase Receipt":
+			self.doc.base_total=self.doc.base_total-self.doc.credit_total_amt
+			self.doc.round_floats_in(self.doc, ["credit_total_amt"])
 
 		self.doc.round_floats_in(self.doc, ["total", "base_total", "net_total", "base_net_total"])
+		
 
 	def calculate_taxes(self):
 		self.doc.rounding_adjustment = 0
@@ -296,10 +311,17 @@ class calculate_taxes_and_totals(object):
 					flt(diff), self.doc.precision("rounding_adjustment"))
 
 	def calculate_totals(self):
-		self.doc.grand_total = flt(self.doc.get("taxes")[-1].total) + flt(self.doc.rounding_adjustment) \
-			if self.doc.get("taxes") else flt(self.doc.net_total)
+		if self.doc.doctype=="Sales Order":
+			self.doc.grand_total = flt(self.doc.get("taxes")[-1].total) + flt(self.doc.rounding_adjustment)+flt(self.doc.delivery_charges) \
+				if self.doc.get("taxes") else flt(self.doc.net_total)+flt(self.doc.delivery_charges)
 
-		self.doc.total_taxes_and_charges = flt(self.doc.grand_total - self.doc.net_total
+			self.doc.total_taxes_and_charges = flt(self.doc.grand_total - self.doc.net_total-flt(self.doc.delivery_charges)
+			- flt(self.doc.rounding_adjustment), self.doc.precision("total_taxes_and_charges"))
+		else:
+			self.doc.grand_total = flt(self.doc.get("taxes")[-1].total) + flt(self.doc.rounding_adjustment) \
+				if self.doc.get("taxes") else flt(self.doc.net_total)
+
+			self.doc.total_taxes_and_charges = flt(self.doc.grand_total - self.doc.net_total
 			- flt(self.doc.rounding_adjustment), self.doc.precision("total_taxes_and_charges"))
 
 		self._set_in_company_currency(self.doc, ["total_taxes_and_charges", "rounding_adjustment"])
@@ -328,13 +350,6 @@ class calculate_taxes_and_totals(object):
 		self.doc.round_floats_in(self.doc, ["grand_total", "base_grand_total"])
 
 		self.set_rounded_total()
-
-	def calculate_total_net_weight(self):
-		if self.doc.meta.get_field('total_net_weight'):
-			self.doc.total_net_weight = 0.0
-			for d in self.doc.items:
-				if d.total_weight:
-					self.doc.total_net_weight += d.total_weight
 
 	def set_rounded_total(self):
 		if self.doc.meta.get_field("rounded_total"):
@@ -600,19 +615,16 @@ def get_itemised_tax(taxes):
 			for item_code, tax_data in item_tax_map.items():
 				itemised_tax.setdefault(item_code, frappe._dict())
 
-				tax_rate = 0.0
-				tax_amount = 0.0
-
 				if isinstance(tax_data, list):
-					tax_rate = flt(tax_data[0])
-					tax_amount = flt(tax_data[1])
+					itemised_tax[item_code][tax.description] = frappe._dict(dict(
+						tax_rate=flt(tax_data[0]),
+						tax_amount=flt(tax_data[1])
+					))
 				else:
-					tax_rate = flt(tax_data)
-
-				itemised_tax[item_code][tax.description] = frappe._dict(dict(
-					tax_rate = tax_rate,
-					tax_amount = tax_amount
-				))
+					itemised_tax[item_code][tax.description] = frappe._dict(dict(
+						tax_rate=flt(tax_data),
+						tax_amount=0.0
+					))
 
 	return itemised_tax
 

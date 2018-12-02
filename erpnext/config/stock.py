@@ -238,6 +238,12 @@ def get_data():
 				{
 					"type": "report",
 					"is_query_report": True,
+					"name": "Price List Distribution",
+					"doctype": "Stock"
+				},
+				{
+					"type": "report",
+					"is_query_report": True,
 					"name": "Ordered Items To Be Delivered",
 					"doctype": "Delivery Note"
 				},

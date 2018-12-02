@@ -478,6 +478,16 @@ def get_data():
 			"label": _("Chapter"),
 			"hidden": 1
 		},
+                {
+                        "module_name": "Selling",
+                        "color": "#3B9C9C",
+                        "icon": "fa fa-cube",
+                        "_doctype": "Chapter",
+                        "type": "list",
+                        "link": "/price-list-sheet/",
+                        "label": _("Chapter"),
+                        "hidden": 1
+                },
 		{
 			"module_name": "Non Profit",
 			"color": "#DE2B37",

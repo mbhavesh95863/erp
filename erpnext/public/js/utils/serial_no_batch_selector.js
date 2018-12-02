@@ -113,7 +113,7 @@ erpnext.SerialNoBatchSelector = Class.extend({
 			}
 		}
 
-		this.dialog.show();
+		//this.dialog.show();
 	},
 
 	on_close_dialog: function() {

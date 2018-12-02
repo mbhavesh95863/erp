@@ -1,0 +1,27 @@
+{
+ "content": null, 
+ "creation": "2018-10-06 07:43:28.089751", 
+ "docstatus": 0, 
+ "doctype": "Page", 
+ "icon": "octicon octicon-beaker", 
+ "idx": 0, 
+ "modified": "2018-10-07 05:55:04.259673", 
+ "modified_by": "Administrator", 
+ "module": "Selling", 
+ "name": "price-list-sheet", 
+ "owner": "Administrator", 
+ "page_name": "Price List Sheet", 
+ "roles": [
+  {
+   "role": "System Manager"
+  }, 
+  {
+   "role": "Sales Manager"
+  }
+ ], 
+ "script": null, 
+ "standard": "Yes", 
+ "style": null, 
+ "system_page": 0, 
+ "title": "Price List Sheet"
+}

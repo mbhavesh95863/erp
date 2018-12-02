@@ -1,6 +1,6 @@
 frappe.listview_settings['Sales Order'] = {
 	add_fields: ["base_grand_total", "customer_name", "currency", "delivery_date",
-		"per_delivered", "per_billed", "status", "order_type", "name"],
+		"per_delivered", "per_billed", "status", "order_type", "name","delivery_status"],
 	get_indicator: function(doc) {
 		if(doc.status==="Closed"){
 			return [__("Closed"), "green", "status,=,Closed"];
@@ -47,6 +47,13 @@ frappe.listview_settings['Sales Order'] = {
 
 		listview.page.add_menu_item(__("Re-open"), function() {
 			listview.call_for_selected_items(method, {"status": "Submitted"});
+		});
+
+		listview.page.add_menu_item(__("Submit"), function() {
+			listview.call_for_selected_items("erpnext.selling.doctype.sales_order.sales_order.multisubmit", {"status": "Submitted"});
+		});
+		listview.page.add_menu_item(__("Approved"), function() {
+			listview.call_for_selected_items("erpnext.selling.doctype.sales_order.sales_order.multiApproved", {"status": "Submitted"});
 		});
 
 	}

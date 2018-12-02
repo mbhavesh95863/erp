@@ -270,11 +270,12 @@ class PurchaseInvoice(BuyingController):
 		])
 
 	def validate_purchase_receipt_if_update_stock(self):
-		if self.update_stock:
-			for item in self.get("items"):
-				if item.purchase_receipt:
-					frappe.throw(_("Stock cannot be updated against Purchase Receipt {0}")
-						.format(item.purchase_receipt))
+		pass
+		#if self.update_stock:
+		#	for item in self.get("items"):
+		#		if item.purchase_receipt:
+		#			frappe.throw(_("Stock cannot be updated against Purchase Receipt {0}")
+		#				.format(item.purchase_receipt))
 
 	def on_submit(self):
 		super(PurchaseInvoice, self).on_submit()
@@ -363,10 +364,7 @@ class PurchaseInvoice(BuyingController):
 		return gl_entries
 
 	def make_supplier_gl_entry(self, gl_entries):
-		# Checked both rounding_adjustment and rounded_total 
-		# because rounded_total had value even before introcution of posting GLE based on rounded total
-		grand_total = self.rounded_total if (self.rounding_adjustment and self.rounded_total) else self.grand_total
-
+		grand_total = self.rounded_total or self.grand_total
 		if grand_total:
 			# Didnot use base_grand_total to book rounding loss gle
 			grand_total_in_company_currency = flt(grand_total * self.conversion_rate,
@@ -391,20 +389,16 @@ class PurchaseInvoice(BuyingController):
 		expenses_included_in_valuation = self.get_company_default("expenses_included_in_valuation")
 		warehouse_account = get_warehouse_account_map()
 
-		voucher_wise_stock_value = {}
-		if self.update_stock:
-			for d in frappe.get_all('Stock Ledger Entry',
-				fields = ["voucher_detail_no", "stock_value_difference"], filters={'voucher_no': self.name}):
-				voucher_wise_stock_value.setdefault(d.voucher_detail_no, d.stock_value_difference)
-
 		for item in self.get("items"):
 			if flt(item.base_net_amount):
 				account_currency = get_account_currency(item.expense_account)
 
 				if self.update_stock and self.auto_accounting_for_stock and item.item_code in stock_items:
+					val_rate_db_precision = 6 if cint(item.precision("valuation_rate")) <= 6 else 9
+
 					# warehouse account
-					warehouse_debit_amount = self.make_stock_adjustment_entry(gl_entries,
-						item, voucher_wise_stock_value, account_currency)
+					warehouse_debit_amount = flt(flt(item.valuation_rate, val_rate_db_precision)
+						* flt(item.qty)	* flt(item.conversion_factor), item.precision("base_net_amount"))
 
 					gl_entries.append(
 						self.get_gl_dict({
@@ -475,36 +469,6 @@ class PurchaseInvoice(BuyingController):
 
 							self.negative_expense_to_be_booked += flt(item.item_tax_amount, \
 								item.precision("item_tax_amount"))
-
-	def make_stock_adjustment_entry(self, gl_entries, item, voucher_wise_stock_value, account_currency):
-		net_amt_precision = item.precision("base_net_amount")
-		val_rate_db_precision = 6 if cint(item.precision("valuation_rate")) <= 6 else 9
-
-		warehouse_debit_amount = flt(flt(item.valuation_rate, val_rate_db_precision)
-			* flt(item.qty)	* flt(item.conversion_factor), net_amt_precision)
-
-		# Stock ledger value is not matching with the warehouse amount
-		if (self.update_stock and voucher_wise_stock_value.get(item.name) and
-			warehouse_debit_amount != flt(voucher_wise_stock_value.get(item.name), net_amt_precision)):
-
-			cost_of_goods_sold_account = self.get_company_default("default_expense_account")
-			stock_amount = flt(voucher_wise_stock_value.get(item.name), net_amt_precision)
-			stock_adjustment_amt = warehouse_debit_amount - stock_amount
-
-			gl_entries.append(
-				self.get_gl_dict({
-					"account": cost_of_goods_sold_account,
-					"against": item.expense_account,
-					"debit": stock_adjustment_amt,
-					"remarks": self.get("remarks") or _("Stock Adjustment"),
-					"cost_center": item.cost_center,
-					"project": item.project
-				}, account_currency)
-			)
-
-			warehouse_debit_amount = stock_amount
-
-		return warehouse_debit_amount
 
 	def make_tax_gl_entries(self, gl_entries):
 		# tax table gl entries
@@ -734,10 +698,28 @@ class PurchaseInvoice(BuyingController):
 	def on_recurring(self, reference_doc, subscription_doc):
 		self.due_date = None
 
+
 @frappe.whitelist()
 def make_debit_note(source_name, target_doc=None):
 	from erpnext.controllers.sales_and_purchase_return import make_return_doc
 	return make_return_doc("Purchase Invoice", source_name, target_doc)
+
+@frappe.whitelist()
+def make_debit_note1(source_name, target_doc=None):
+	from erpnext.controllers.sales_and_purchase_return import make_return_doc
+	doc=make_return_doc("Purchase Invoice", source_name, target_doc)
+	#doc=make_return_doc("Purchase Receipt", source_name, target_doc)
+	#frappe.msgprint(json.dumps(doc))]
+	response=[]
+	for row in doc.items:
+		if row.credits>0:
+			response.append(row)
+	doc.items=[]
+	if len(response)>0:
+		doc1=doc.insert()
+		doc1.items=response
+		doc1.update_stock=1
+		doc1.submit()
 
 @frappe.whitelist()
 def get_fixed_asset_account(asset, account=None):

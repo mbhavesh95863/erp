@@ -26,11 +26,6 @@ erpnext.buying.BuyingController = erpnext.TransactionController.extend({
 			};
 		});
 
-		if (this.frm.doc.__islocal
-			&& frappe.meta.has_field(this.frm.doc.doctype, "disable_rounded_total")) {
-			this.frm.set_value("disable_rounded_total", cint(frappe.sys_defaults.disable_rounded_total));
-		}
-
 		/* eslint-disable */
 		// no idea where me is coming from
 		if(this.frm.get_field('shipping_address')) {
@@ -108,15 +103,101 @@ erpnext.buying.BuyingController = erpnext.TransactionController.extend({
 	buying_price_list: function() {
 		this.apply_price_list();
 	},
+	credits:function(){
+		this.calculate_taxes_and_totals();
+
+	},
 
 	price_list_rate: function(doc, cdt, cdn) {
 		var item = frappe.get_doc(cdt, cdn);
 		frappe.model.round_floats_in(item, ["price_list_rate", "discount_percentage"]);
+		item.rate = flt(item.price_list_rate * (1 - item.discount_percentage / 100.0),
+			precision("rate", item));
+		if(doc.doctype=="Purchase Order")
+		{
+				frappe.call({
+				method: 'frappe.client.get_value',
+				args: {
+					doctype: 'Item',
+					filters: { item_code:item.item_code
+					},
+				   fieldname:['purchase_uom','gross_weight']
+				},
+				callback: function(res) {
+					
+					
+					if(res.message.purchase_uom === 'Pallet')
+					{
+						frappe.model.set_value(cdt, cdn, "box_unit_rate",item.rate/item.boxes_pallet_for_purchase);
+						
+						frm.refresh_field('box_unit_rate');
 
-		item.discount_amount = flt(item.price_list_rate) * flt(item.discount_percentage) / 100;
-		item.rate = flt((item.price_list_rate) - (item.discount_amount), precision('rate', item));
+					}
+					else 
+					{
+						frappe.model.set_value(cdt, cdn, "box_unit_rate",item.rate);
+						frm.refresh_field('box_unit_rate');
+					}
+					frm.refresh_field('items');
+				}
+			})
+		}
 
 		this.calculate_taxes_and_totals();
+	},
+	box_unit_rate:function(doc,cdt,cdn){
+		var item = frappe.get_doc(cdt, cdn);
+	//	var rate=flt((item.box_unit_rate )* (item.boxes_pallet_for_purchase),
+	//	precision("rate", item));
+	//	frappe.model.set_value(cdt,cdn,"rate",rate)
+	//	console.log(rate);
+	//	this.calculate_taxes_and_totals();
+		frappe.model.set_value(cdt, cdn, "amount",parseFloat(item.box_unit_rate)*parseFloat(item.box));
+		if(item.uom=="Box"){
+		frappe.model.set_value(cdt, cdn, "rate_lbs",parseFloat(item.box_unit_rate)/parseFloat(item.weight_per_unit));
+		}
+		
+
+	},
+	rate_lbs:function(doc,cdt,cdn){
+		var item = frappe.get_doc(cdt, cdn);
+	//	var rate=flt((item.box_unit_rate )* (item.boxes_pallet_for_purchase),
+	//	precision("rate", item));
+	//	frappe.model.set_value(cdt,cdn,"rate",rate)
+	//	console.log(rate);
+	//	this.calculate_taxes_and_totals();
+		if(item.uom=="Box"){
+		frappe.model.set_value(cdt, cdn, "box_unit_rate",parseFloat(item.rate_lbs)*parseFloat(item.weight_per_unit));
+		}
+		
+
+	},
+	box_rate:function(doc,cdt,cdn){
+		var item = frappe.get_doc(cdt, cdn);
+	//	var rate=flt((item.box_unit_rate )* (item.boxes_pallet_for_purchase),
+	//	precision("rate", item));
+	//	frappe.model.set_value(cdt,cdn,"rate",rate)
+	//	console.log(rate);
+	//	this.calculate_taxes_and_totals();
+		if(parseInt(item.credits)>0)
+		{
+		var final_qty=parseInt(item.received_box)-parseInt(item.credits)
+		var amount=parseInt(item.box_rate)*final_qty
+		console.log(final_qty);
+		console.log(amount);
+		frappe.model.set_value(cdt, cdn, "amount",amount);
+		frappe.model.round_floats_in(item, ["amount"]);
+		}
+		else{
+		frappe.model.set_value(cdt, cdn, "amount",parseInt(item.box_rate)*parseInt(item.received_box));
+		console.log("else")
+		}
+
+	
+		this.calculate_taxes_and_totals();
+		
+		
+
 	},
 
 	discount_percentage: function(doc, cdt, cdn) {
@@ -125,7 +206,7 @@ erpnext.buying.BuyingController = erpnext.TransactionController.extend({
 
 	qty: function(doc, cdt, cdn) {
 		var item = frappe.get_doc(cdt, cdn);
-		if ((doc.doctype == "Purchase Receipt") || (doc.doctype == "Purchase Invoice" && (doc.update_stock || doc.is_return))) {
+		if ((doc.doctype == "Purchase Invoice" && (doc.update_stock || doc.is_return))) {
 			frappe.model.round_floats_in(item, ["qty", "received_qty"]);
 
 			if(!doc.is_return && this.validate_negative_quantity(cdt, cdn, item, ["qty", "received_qty"])){ return }
@@ -155,8 +236,13 @@ erpnext.buying.BuyingController = erpnext.TransactionController.extend({
 
 		if(!doc.is_return && this.validate_negative_quantity(cdt, cdn, item, ["received_qty", "rejected_qty"])){ return }
 
+		if(!doc.doctype=="Purchase Receipt")
+		{
 		item.qty = flt(item.received_qty - item.rejected_qty, precision("qty", item));
 		this.qty(doc, cdt, cdn);
+		}
+
+
 	},
 
 	validate_negative_quantity: function(cdt, cdn, item, fieldnames){
@@ -228,7 +314,6 @@ erpnext.buying.BuyingController = erpnext.TransactionController.extend({
 	tc_name: function() {
 		this.get_terms();
 	},
-
 	link_to_mrs: function() {
 		var my_items = [];
 		for (var i in cur_frm.doc.items) {
@@ -242,52 +327,44 @@ erpnext.buying.BuyingController = erpnext.TransactionController.extend({
 				items: my_items
 			},
 			callback: function(r) {
-				if(!r.message) {
-					frappe.throw(__("No pending Material Requests found to link for the given items."))
-				}
-				else {
-					var i = 0;
-					var item_length = cur_frm.doc.items.length;
-					while (i < item_length) {
-						var qty = cur_frm.doc.items[i].qty;
-						(r.message[0] || []).forEach(function(d) {
-							if (d.qty > 0 && qty > 0 && cur_frm.doc.items[i].item_code == d.item_code && !cur_frm.doc.items[i].material_request_item)
-							{
-								cur_frm.doc.items[i].material_request = d.mr_name;
-								cur_frm.doc.items[i].material_request_item = d.mr_item;
-								var my_qty = Math.min(qty, d.qty);
-								qty = qty - my_qty;
-								d.qty = d.qty  - my_qty;
-								cur_frm.doc.items[i].stock_qty = my_qty*cur_frm.doc.items[i].conversion_factor;
-								cur_frm.doc.items[i].qty = my_qty;
-	
-								frappe.msgprint("Assigning " + d.mr_name + " to " + d.item_code + " (row " + cur_frm.doc.items[i].idx + ")");
-								if (qty > 0)
-								{
-									frappe.msgprint("Splitting " + qty + " units of " + d.item_code);
-									var newrow = frappe.model.add_child(cur_frm.doc, cur_frm.doc.items[i].doctype, "items");
-									item_length++;
-	
-									for (var key in cur_frm.doc.items[i])
-									{
-										newrow[key] = cur_frm.doc.items[i][key];
-									}
-	
-									newrow.idx = item_length;
-									newrow["stock_qty"] = newrow.conversion_factor*qty;
-									newrow["qty"] = qty;
-	
-									newrow["material_request"] = "";
-									newrow["material_request_item"] = "";
-	
+				if(r.exc) return;
+
+				var i = 0;
+				var item_length = cur_frm.doc.items.length;
+				while (i < item_length) {
+					var qty = cur_frm.doc.items[i].qty;
+					(r.message[0] || []).forEach(function(d) {
+						if (d.qty > 0 && qty > 0 && cur_frm.doc.items[i].item_code == d.item_code && !cur_frm.doc.items[i].material_request_item)
+						{
+							cur_frm.doc.items[i].material_request = d.mr_name;
+							cur_frm.doc.items[i].material_request_item = d.mr_item;
+							var my_qty = Math.min(qty, d.qty);
+							qty = qty - my_qty;
+							d.qty = d.qty  - my_qty;
+							cur_frm.doc.items[i].stock_qty = my_qty*cur_frm.doc.items[i].conversion_factor;
+							cur_frm.doc.items[i].qty = my_qty;
+
+							frappe.msgprint("Assigning " + d.mr_name + " to " + d.item_code + " (row " + cur_frm.doc.items[i].idx + ")");
+							if (qty > 0) {
+								frappe.msgprint("Splitting " + qty + " units of " + d.item_code);
+								var newrow = frappe.model.add_child(cur_frm.doc, cur_frm.doc.items[i].doctype, "items");
+								item_length++;
+
+								for (var key in cur_frm.doc.items[i]) {
+									newrow[key] = cur_frm.doc.items[i][key];
 								}
+
+								newrow.idx = item_length;
+								newrow["stock_qty"] = newrow.conversion_factor*qty;
+								newrow["qty"] = qty;
+								newrow["material_request"] = "";
+								newrow["material_request_item"] = "";
 							}
-						});
-						i++;
-					}
-					refresh_field("items");
-					//cur_frm.save();
+						}
+					});
+					i++;
 				}
+				refresh_field("items");
 			}
 		});
 	}

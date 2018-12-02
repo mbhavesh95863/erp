@@ -20,14 +20,21 @@ erpnext.stock.LandedCostVoucher = erpnext.stock.StockController.extend({
 					filters.push(["Purchase Invoice", "update_stock", "=", "1"])
 				}
 
+
+
 				if (!me.frm.doc.company) frappe.msgprint(__("Please enter company first"));
 				return {
 					filters: filters
 				}
+				if(d.receipt_document_type == "Purchase Order"){
+					this.frm.add_fetch("receipt_document", "posting_date", "transaction_date");
+				}
+				else{
+					this.frm.add_fetch("receipt_document", "posting_date", "posting_date");
+				}
 			};
 
 		this.frm.add_fetch("receipt_document", "supplier", "supplier");
-		this.frm.add_fetch("receipt_document", "posting_date", "posting_date");
 		this.frm.add_fetch("receipt_document", "base_grand_total", "grand_total");
 
 	},
@@ -64,22 +71,30 @@ erpnext.stock.LandedCostVoucher = erpnext.stock.StockController.extend({
 		set_field_options("landed_cost_help", help_content);
 	},
 
-	get_items_from_purchase_receipts: function() {
+	get_items_from_purchase_order: function(frm) {
 		var me = this;
 		if(!this.frm.doc.purchase_receipts.length) {
-			frappe.msgprint(__("Please enter Purchase Receipt first"));
+			frappe.msgprint(__("Please enter Purchase Order first"));
 		} else {
 			return this.frm.call({
 				doc: me.frm.doc,
 				method: "get_items_from_purchase_receipts",
 				callback: function(r, rt) {
+					console.log(r);
 					me.set_applicable_charges_for_item();
 				}
 			});
 		}
+			console.log("abc")
+
 	},
+		
 
 	amount: function(frm) {
+		this.set_total_taxes_and_charges();
+		this.set_applicable_charges_for_item();
+	},
+	gross_weight: function(frm) {
 		this.set_total_taxes_and_charges();
 		this.set_applicable_charges_for_item();
 	},
@@ -92,22 +107,44 @@ erpnext.stock.LandedCostVoucher = erpnext.stock.StockController.extend({
 		cur_frm.set_value("total_taxes_and_charges", total_taxes_and_charges);
 	},
 
-	set_applicable_charges_for_item: function() {
+	set_applicable_charges_for_item: function(frm,cdt,cdn) {
 		var me = this;
+		var total_qty2=0.0;
+		var total_weight2=0.0;
+		$.each(this.frm.doc.items || [], function(i, item) {
+			total_qty2 += item.qty
+			total_weight2 += item.gross_weight
+
+		})
+		cur_frm.set_value("total_boxes",total_qty2)
+		cur_frm.set_value("total_weight",total_weight2)
+		console.log("abc")
+
 
 		if(this.frm.doc.taxes.length) {
 			
 			var total_item_cost = 0.0;
 			var based_on = this.frm.doc.distribute_charges_based_on.toLowerCase();
+			if(based_on=="gross weight"){
+				based_on='gross_weight'
+			}
 			$.each(this.frm.doc.items || [], function(i, d) {
 				total_item_cost += flt(d[based_on])
 			});
-
+			if(based_on=="gross_weight"){
 			var total_charges = 0.0;
+			var total_qty=0.0;
+			var total_weight=0.0;
 			$.each(this.frm.doc.items || [], function(i, item) {
-				item.applicable_charges = flt(item[based_on]) * flt(me.frm.doc.total_taxes_and_charges) / flt(total_item_cost)			
+				item.applicable_charges = flt(item[based_on]) * flt(me.frm.doc.total_taxes_and_charges) / flt(total_item_cost)
+				item.lcost_box=flt(flt(item.amount)+flt(item.applicable_charges))/flt(item.qty)
+				console.log("item.applicable_charges"+item.applicable_charges)
 				item.applicable_charges = flt(item.applicable_charges, precision("applicable_charges", item))
+				item.lcost_box=flt(item.lcost_box, precision("lcost_box", item))
 				total_charges += item.applicable_charges
+				total_qty += item.qty
+				total_weight += item.gross_weight
+				console.log(item.lcost_box)
 			});
 
 			if (total_charges != this.frm.doc.total_taxes_and_charges){
@@ -115,6 +152,37 @@ erpnext.stock.LandedCostVoucher = erpnext.stock.StockController.extend({
 				this.frm.doc.items.slice(-1)[0].applicable_charges += diff
 			}
 			refresh_field("items");
+			console.log("total_qty"+total_qty)
+			console.log("total_weight"+total_weight)
+			cur_frm.set_value("total_boxes",total_qty)
+			cur_frm.set_value("total_weight",total_weight)
+			}else{
+				var total_charges = 0.0;
+				var total_qty1=0.0;
+				var total_weight1=0.0;
+				$.each(this.frm.doc.items || [], function(i, item) {
+					item.applicable_charges = flt(item[based_on]) * flt(me.frm.doc.total_taxes_and_charges) / flt(total_item_cost)
+					console.log("item.applicable_charges"+item.applicable_charges)
+					item.lcost_box=''
+					item.applicable_charges = flt(item.applicable_charges, precision("applicable_charges", item))
+					total_charges += item.applicable_charges
+					total_qty1 += item.qty
+					total_weight1 += item.gross_weight
+				});
+				console.log("total_charges"+total_charges)
+				console.log("this.frm.doc.total_taxes_and_charges"+this.frm.doc.total_taxes_and_charges)
+
+				if (total_charges != this.frm.doc.total_taxes_and_charges){
+					var diff = this.frm.doc.total_taxes_and_charges - flt(total_charges)
+					this.frm.doc.items.slice(-1)[0].applicable_charges += diff
+				}
+				refresh_field("items");
+			cur_frm.set_value("total_boxes",total_qty1)
+			cur_frm.set_value("total_weight",total_weight1)
+
+
+
+}
 		}
 	},
 	distribute_charges_based_on: function (frm) {

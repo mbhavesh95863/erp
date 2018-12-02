@@ -48,6 +48,11 @@ class SalesOrder(SellingController):
 		if not self.billing_status: self.billing_status = 'Not Billed'
 		if not self.delivery_status: self.delivery_status = 'Not Delivered'
 
+	def autoname(self):
+		if self.is_back_order:
+			idx=1
+			self.name=self.sales_order_ref+('-%.1i' % idx)
+
 	def validate_po(self):
 		# validate p.o date v/s delivery date
 		if self.po_date:
@@ -380,6 +385,13 @@ class SalesOrder(SellingController):
 			d.set("delivery_date", get_next_schedule_date(reference_delivery_date,
 				subscription_doc.frequency, cint(subscription_doc.repeat_on_day)))
 
+	def get_item_weight_per_unit(self,item):
+		weight_per_unit = frappe.db.sql("select weight_per_unit from `tabItem` where name='{0}'".format(item))
+		if weight_per_unit:
+			return weight_per_unit[0][0]
+
+
+
 def get_list_context(context=None):
 	from erpnext.controllers.website_list_for_contact import get_list_context
 	list_context = get_list_context(context)
@@ -409,6 +421,31 @@ def close_or_unclose_sales_orders(names, status):
 					so.update_status('Draft')
 
 	frappe.local.message_log = []
+
+@frappe.whitelist()
+def multisubmit(names,status):
+	if not frappe.has_permission("Sales Order", "write"):
+		frappe.throw(_("Not permitted"), frappe.PermissionError)
+
+	names = json.loads(names)
+	for name in names:
+		so = frappe.get_doc("Sales Order", name)
+		if so.docstatus == 0:
+			so.submit()
+
+@frappe.whitelist()
+def multiApproved(names,status):
+	if not frappe.has_permission("Sales Order", "write"):
+		frappe.throw(_("Not permitted"), frappe.PermissionError)
+
+	names = json.loads(names)
+	for name in names:
+		so = frappe.get_doc("Sales Order", name)
+		if so.docstatus == 0:
+			so.authorize="Approved"
+			so.submit()
+
+
 
 @frappe.whitelist()
 def make_material_request(source_name, target_doc=None):
@@ -492,6 +529,7 @@ def make_delivery_note(source_name, target_doc=None):
 		target.base_amount = (flt(source.qty) - flt(source.delivered_qty)) * flt(source.base_rate)
 		target.amount = (flt(source.qty) - flt(source.delivered_qty)) * flt(source.rate)
 		target.qty = flt(source.qty) - flt(source.delivered_qty)
+		target.ordered_qty = flt(source.qty) - flt(source.delivered_qty)
 
 		item = frappe.db.get_value("Item", target.item_code, ["item_group", "selling_cost_center"], as_dict=1)
 
@@ -551,13 +589,13 @@ def make_sales_invoice(source_name, target_doc=None, ignore_permissions=False):
 
 	def update_item(source, target, source_parent):
 		target.amount = flt(source.amount) - flt(source.billed_amt)
+		target.item_tax_rate=source.item_tax_rate
 		target.base_amount = target.amount * flt(source_parent.conversion_rate)
 		target.qty = target.amount / flt(source.rate) if (source.rate and source.billed_amt) else source.qty
+		target.cost_center=source.cost_center
 
 		item = frappe.db.get_value("Item", target.item_code, ["item_group", "selling_cost_center"], as_dict=1)
-		target.cost_center = frappe.db.get_value("Project", source_parent.project, "cost_center") \
-			or item.selling_cost_center \
-			or frappe.db.get_value("Item Group", item.item_group, "default_cost_center")
+	
 
 	doclist = get_mapped_doc("Sales Order", source_name, {
 		"Sales Order": {

@@ -9,6 +9,9 @@ from frappe.utils import cstr, flt, cint
 from erpnext.stock.stock_ledger import update_entries_after
 from erpnext.controllers.stock_controller import StockController
 from erpnext.stock.utils import get_stock_balance
+from operator import itemgetter 
+
+
 
 class OpeningEntryAccountError(frappe.ValidationError): pass
 class EmptyStockReconciliationItemsError(frappe.ValidationError): pass
@@ -29,9 +32,31 @@ class StockReconciliation(StockController):
 		self.validate_expense_account()
 		self.set_total_qty_and_amount()
 
+
+	
+	def validate_valuation(self):
+		for row in self.items:
+			obj1={}
+			obj2={}
+
+			if int(row.current_qty)==0:
+				if not row.adj_quantity:
+					adj_qty=0
+				else:
+					adj_qty=row.adj_quantity
+				if int(adj_qty)==0:
+					obj2["item_code"]=row.item_code
+					obj2["qty"]=row.qty
+					#rate=getValuationRate(row.item_code)
+					#rappe.msgprint(str(rate))
+					if not row.valuation_rate:
+						frappe.throw(_("No Valuation Rate Available In System For Item {0}.").format(row.item_code))
+					
+
 	def on_submit(self):
 		self.update_stock_ledger()
 		self.make_gl_entries()
+		self.validate_valuation()
 
 	def on_cancel(self):
 		self.delete_and_repost_sle()
@@ -44,7 +69,8 @@ class StockReconciliation(StockController):
 			qty, rate = get_stock_balance(item.item_code, item.warehouse,
 					self.posting_date, self.posting_time, with_valuation_rate=True)
 			if (item.qty==None or item.qty==qty) and (item.valuation_rate==None or item.valuation_rate==rate):
-				return False
+				if item.physical_quantity==None:
+					return False
 			else:
 				# set default as current rates
 				if item.qty==None:
@@ -57,7 +83,7 @@ class StockReconciliation(StockController):
 				item.current_valuation_rate = rate
 				self.difference_amount += (flt(item.qty, item.precision("qty")) * \
 					flt(item.valuation_rate or rate, item.precision("valuation_rate")) \
-					- flt(qty, item.precision("qty")) * flt(rate, item.precision("valuation_rate")))
+					- flt(qty) * flt(rate))
 				return True
 
 		items = filter(lambda d: _changed(d), self.items)
@@ -70,7 +96,7 @@ class StockReconciliation(StockController):
 			self.items = items
 			for i, item in enumerate(self.items):
 				item.idx = i + 1
-			frappe.msgprint(_("Removed items with no change in quantity or value."))
+			#frappe.msgprint(_("Removed items with no change in quantity or value."))
 
 	def validate_data(self):
 		def _get_msg(row_num, msg):
@@ -109,7 +135,7 @@ class StockReconciliation(StockController):
 				self.validation_messages.append(_get_msg(row_num,
 					_("Negative Valuation Rate is not allowed")))
 
-			if row.qty and row.valuation_rate in ["", None]:
+			if row.qty and not row.valuation_rate:
 				row.valuation_rate = get_stock_balance(row.item_code, row.warehouse,
 							self.posting_date, self.posting_time, with_valuation_rate=True)[1]
 				if not row.valuation_rate:
@@ -148,8 +174,8 @@ class StockReconciliation(StockController):
 				raise frappe.ValidationError(_("Serialized Item {0} cannot be updated using Stock Reconciliation, please use Stock Entry").format(item_code))
 
 			# item managed batch-wise not allowed
-			if item.has_batch_no == 1:
-				raise frappe.ValidationError(_("Batched Item {0} cannot be updated using Stock Reconciliation, instead use Stock Entry").format(item_code))
+			#if item.has_batch_no == 1:
+			#	raise frappe.ValidationError(_("Batched Item {0} cannot be updated using Stock Reconciliation, instead use Stock Entry").format(item_code))
 
 			# docstatus should be < 2
 			validate_cancelled_item(item_code, item.docstatus, verbose=0)
@@ -176,15 +202,15 @@ class StockReconciliation(StockController):
 				if row.valuation_rate in ("", None):
 					row.valuation_rate = previous_sle.get("valuation_rate", 0)
 
-			if row.qty and not row.valuation_rate:
-				frappe.throw(_("Valuation Rate required for Item in row {0}").format(row.idx))
+			#if row.qty and not row.valuation_rate:
+			#	frappe.throw(_("Valuation Rate required for Item in row {0}").format(row.idx))
 
 			if ((previous_sle and row.qty == previous_sle.get("qty_after_transaction")
 				and row.valuation_rate == previous_sle.get("valuation_rate"))
 				or (not previous_sle and not row.qty)):
 					continue
 
-			self.insert_entries(row)
+			#self.insert_entries(row)
 
 	def insert_entries(self, row):
 		"""Insert Stock Ledger Entries"""
@@ -199,7 +225,7 @@ class StockReconciliation(StockController):
 			"company": self.company,
 			"stock_uom": frappe.db.get_value("Item", row.item_code, "stock_uom"),
 			"is_cancelled": "No",
-			"qty_after_transaction": flt(row.qty, row.precision("qty")),
+			"qty_after_transaction": flt(row.current_qty, row.precision("current_qty")),
 			"valuation_rate": flt(row.valuation_rate, row.precision("valuation_rate"))
 		})
 		self.make_sl_entries([args])
@@ -245,9 +271,7 @@ class StockReconciliation(StockController):
 	def set_total_qty_and_amount(self):
 		for d in self.get("items"):
 			d.amount = flt(d.qty, d.precision("qty")) * flt(d.valuation_rate, d.precision("valuation_rate"))
-			d.current_amount = (flt(d.current_qty,
-				d.precision("current_qty")) * flt(d.current_valuation_rate, d.precision("current_valuation_rate")))
-
+			d.current_amount = flt(d.current_qty) * flt(d.current_valuation_rate)
 			d.quantity_difference = flt(d.qty) - flt(d.current_qty)
 			d.amount_difference = flt(d.amount) - flt(d.current_amount)
 
@@ -269,31 +293,242 @@ class StockReconciliation(StockController):
 			self._cancel()
 
 @frappe.whitelist()
-def get_items(warehouse, posting_date, posting_time):
-	items = frappe.get_list("Bin", fields=["item_code"], filters={"warehouse": warehouse}, as_list=1)
+def get_items(warehouse, posting_date, posting_time,item_code=None,enbl_dsbl=None,item_group=None):
+	if item_code:
+		items = frappe.get_list("Bin", fields=["item_code"], filters={"warehouse": warehouse,"item_code":item_code}, as_list=1)
 
-	items += frappe.get_list("Item", fields=["name"], filters= {"is_stock_item": 1, "has_serial_no": 0,
-		"has_batch_no": 0, "has_variants": 0, "disabled": 0, "default_warehouse": warehouse},
-			as_list=1)
+		items += frappe.get_list("Item", fields=["name"], filters= {"is_stock_item": 1,"has_variants": 0,"default_warehouse": warehouse,"item_code":item_code},
+				as_list=1)
+	else:
+		items = frappe.get_list("Bin", fields=["item_code"], filters={"warehouse": warehouse}, as_list=1)
+
+		items += frappe.get_list("Item", fields=["name"], filters= {"is_stock_item": 1, "has_variants": 0, "default_warehouse": warehouse,"disabled":0},
+				as_list=1)
+		
 
 	res = []
-	for item in set(items):
+	for item in sorted(set(items)):
 		stock_bal = get_stock_balance(item[0], warehouse, posting_date, posting_time,
 			with_valuation_rate=True)
 
-		if frappe.db.get_value("Item",item[0],"disabled") == 0:
+		if item_group:
+			if frappe.db.get_value("Item",item[0],"item_group") == str(item_group):
+				if item_code:
+					if frappe.db.get_value("Item",item[0],"name") == str(item_code):
+						if enbl_dsbl:
+							if enbl_dsbl=="Enabled":
+								if frappe.db.get_value("Item",item[0],"disabled") == 0:
+									res.append({
+										"item_code": item[0],
+										"warehouse": warehouse,
+										"qty": stock_bal[0],
+										"item_name": frappe.db.get_value('Item', item[0], 'item_name'),
+										"valuation_rate": stock_bal[1],
+										"current_qty": stock_bal[0],
+										"current_valuation_rate": stock_bal[1],
+										"cost_center":getCostCenter(item[0])
+									})
+							else:
+								if frappe.db.get_value("Item",item[0],"disabled") == 1:
+									res.append({
+											"item_code": item[0],
+											"warehouse": warehouse,
+											"qty": stock_bal[0],
+											"item_name": frappe.db.get_value('Item', item[0], 'item_name'),
+											"valuation_rate": stock_bal[1],
+											"current_qty": stock_bal[0],
+											"current_valuation_rate": stock_bal[1],
+											"cost_center":getCostCenter(item[0])
+									})
+						else:
+							#if frappe.db.get_value("Item",item[0],"disabled") == 0:
+							res.append({
+										"item_code": item[0],
+										"warehouse": warehouse,
+										"qty": stock_bal[0],
+										"item_name": frappe.db.get_value('Item', item[0], 'item_name'),
+										"valuation_rate": stock_bal[1],
+										"current_qty": stock_bal[0],
+										"current_valuation_rate": stock_bal[1],
+										"cost_center":getCostCenter(item[0])
+							})
+				
+								
+				else:
+					if enbl_dsbl:
+						if enbl_dsbl=="Enabled":
+							if frappe.db.get_value("Item",item[0],"disabled") == 0:
+								res.append({
+									"item_code": item[0],
+									"warehouse": warehouse,
+									"qty": stock_bal[0],
+									"item_name": frappe.db.get_value('Item', item[0], 'item_name'),
+									"valuation_rate": stock_bal[1],
+									"current_qty": stock_bal[0],
+									"current_valuation_rate": stock_bal[1],
+									"cost_center":getCostCenter(item[0])
+								})
+						else:
+							if frappe.db.get_value("Item",item[0],"disabled") == 1:
+								res.append({
+										"item_code": item[0],
+										"warehouse": warehouse,
+										"qty": stock_bal[0],
+										"item_name": frappe.db.get_value('Item', item[0], 'item_name'),
+										"valuation_rate": stock_bal[1],
+										"current_qty": stock_bal[0],
+										"current_valuation_rate": stock_bal[1],
+										"cost_center":getCostCenter(item[0])
+								})
+					else:
+						#frappe.msgprint("Item Group")
+						#if frappe.db.get_value("Item",item[0],"disabled") == 0:
+						res.append({
+									"item_code": item[0],
+									"warehouse": warehouse,
+									"qty": stock_bal[0],
+									"item_name": frappe.db.get_value('Item', item[0], 'item_name'),
+									"valuation_rate": stock_bal[1],
+									"current_qty": stock_bal[0],
+									"current_valuation_rate": stock_bal[1],
+									"cost_center":getCostCenter(item[0])
+						})
 
-			res.append({
-				"item_code": item[0],
-				"warehouse": warehouse,
-				"qty": stock_bal[0],
-				"item_name": frappe.db.get_value('Item', item[0], 'item_name'),
-				"valuation_rate": stock_bal[1],
-				"current_qty": stock_bal[0],
-				"current_valuation_rate": stock_bal[1]
-			})
+		else:
+			if item_code:
+				if frappe.db.get_value("Item",item[0],"item_code") ==item_code:
+					if enbl_dsbl:
+						if enbl_dsbl=="Enabled":
+							if frappe.db.get_value("Item",item[0],"disabled") == 0:
+								res.append({
+									"item_code": item[0],
+									"warehouse": warehouse,
+									"qty": stock_bal[0],
+									"item_name": frappe.db.get_value('Item', item[0], 'item_name'),
+									"valuation_rate": stock_bal[1],
+									"current_qty": stock_bal[0],
+									"current_valuation_rate": stock_bal[1],
+									"cost_center":getCostCenter(item[0])
+								})
+						else:
+							if frappe.db.get_value("Item",item[0],"disabled") == 1:
+								res.append({
+										"item_code": item[0],
+										"warehouse": warehouse,
+										"qty": stock_bal[0],
+										"item_name": frappe.db.get_value('Item', item[0], 'item_name'),
+										"valuation_rate": stock_bal[1],
+										"current_qty": stock_bal[0],
+										"current_valuation_rate": stock_bal[1],
+										"cost_center":getCostCenter(item[0])
+								})
+					else:
+						#if frappe.db.get_value("Item",item[0],"disabled") == 0:
+						res.append({
+								"item_code": item[0],
+								"warehouse": warehouse,
+								"qty": stock_bal[0],
+								"item_name": frappe.db.get_value('Item', item[0], 'item_name'),
+								"valuation_rate": stock_bal[1],
+								"current_qty": stock_bal[0],
+								"current_valuation_rate": stock_bal[1],
+								"cost_center":getCostCenter(item[0])
+							})
+												
+				else:
+					if enbl_dsbl:
+						if enbl_dsbl=="Enabled":
+							if frappe.db.get_value("Item",item[0],"disabled") == 0:
+								res.append({
+									"item_code": item[0],
+									"warehouse": warehouse,
+									"qty": stock_bal[0],
+									"item_name": frappe.db.get_value('Item', item[0], 'item_name'),
+									"valuation_rate": stock_bal[1],
+									"current_qty": stock_bal[0],
+									"current_valuation_rate": stock_bal[1],
+									"cost_center":getCostCenter(item[0])
+								})
+						else:
+							if frappe.db.get_value("Item",item[0],"disabled") == 1:
+								res.append({
+										"item_code": item[0],
+										"warehouse": warehouse,
+										"qty": stock_bal[0],
+										"item_name": frappe.db.get_value('Item', item[0], 'item_name'),
+										"valuation_rate": stock_bal[1],
+										"current_qty": stock_bal[0],
+										"current_valuation_rate": stock_bal[1],
+										"cost_center":getCostCenter(item[0])
+								})
+					else:
+						#frappe.msgprint("Item Group")
+						#if frappe.db.get_value("Item",item[0],"disabled") == 0:
+						res.append({
+								"item_code": item[0],
+								"warehouse": warehouse,
+								"qty": stock_bal[0],
+								"item_name": frappe.db.get_value('Item', item[0], 'item_name'),
+								"valuation_rate": stock_bal[1],
+								"current_qty": stock_bal[0],
+								"current_valuation_rate": stock_bal[1],
+								"cost_center":getCostCenter(item[0])
+						})
 
-	return res
+			else:
+				if enbl_dsbl:
+					if enbl_dsbl=="Enabled":
+						if frappe.db.get_value("Item",item[0],"disabled") == 0:
+							res.append({
+									"item_code": item[0],
+									"warehouse": warehouse,
+									"qty": stock_bal[0],
+									"item_name": frappe.db.get_value('Item', item[0], 'item_name'),
+									"valuation_rate": stock_bal[1],
+									"current_qty": stock_bal[0],
+									"current_valuation_rate": stock_bal[1],
+									"cost_center":getCostCenter(item[0])
+								})
+						else:
+							if frappe.db.get_value("Item",item[0],"disabled") == 1:
+								res.append({
+										"item_code": item[0],
+										"warehouse": warehouse,
+										"qty": stock_bal[0],
+										"item_name": frappe.db.get_value('Item', item[0], 'item_name'),
+										"valuation_rate": stock_bal[1],
+										"current_qty": stock_bal[0],
+										"current_valuation_rate": stock_bal[1],
+										"cost_center":getCostCenter(item[0])
+								})
+					else:
+						if frappe.db.get_value("Item",item[0],"disabled") == 1:
+							res.append({
+									"item_code": item[0],
+									"warehouse": warehouse,
+									"qty": stock_bal[0],
+									"item_name": frappe.db.get_value('Item', item[0], 'item_name'),
+									"valuation_rate": stock_bal[1],
+									"current_qty": stock_bal[0],
+									"current_valuation_rate": stock_bal[1],
+									"cost_center":getCostCenter(item[0])
+							})
+				else:
+					res.append({
+							"item_code": item[0],
+							"warehouse": warehouse,
+							"qty": stock_bal[0],
+							"item_name": frappe.db.get_value('Item', item[0], 'item_name'),
+							"valuation_rate": stock_bal[1],
+							"current_qty": stock_bal[0],
+							"current_valuation_rate": stock_bal[1],
+							"cost_center":getCostCenter(item[0])
+					})
+
+
+				
+
+	return sorted(res,key=itemgetter('qty'),reverse = True)
 
 @frappe.whitelist()
 def get_stock_balance_for(item_code, warehouse, posting_date, posting_time):
@@ -306,3 +541,58 @@ def get_stock_balance_for(item_code, warehouse, posting_date, posting_time):
 		'qty': qty,
 		'rate': rate
 	}
+
+
+@frappe.whitelist()
+def getValuationRate(item_code, warehouse=None):
+	warehouse="Sundine Kestrel- . - ."
+	# Get valuation rate from last sle for the same item and warehouse
+	#if not company:
+	#	company = erpnext.get_default_company()
+
+	last_valuation_rate = frappe.db.sql("""select valuation_rate
+		from `tabStock Ledger Entry`
+		where item_code = %s and warehouse = %s
+		and valuation_rate >= 0
+		order by posting_date desc, posting_time desc, name desc limit 1""", (item_code, warehouse))
+
+	if not last_valuation_rate:
+		# Get valuation rate from last sle for the item against any warehouse
+		last_valuation_rate = frappe.db.sql("""select valuation_rate
+			from `tabStock Ledger Entry`
+			where item_code = %s and valuation_rate > 0
+			order by posting_date desc, posting_time desc, name desc limit 1""", item_code)
+
+	if last_valuation_rate:
+		return flt(last_valuation_rate[0][0]) # as there is previous records, it might come with zero rate
+
+	# If negative stock allowed, and item delivered without any incoming entry,
+	# system does not found any SLE, then take valuation rate from Item
+	valuation_rate = frappe.db.get_value("Item", item_code, "valuation_rate")
+
+	if not valuation_rate:
+		# try Item Standard rate
+		valuation_rate = frappe.db.get_value("Item", item_code, "standard_rate")
+
+		#if not valuation_rate:
+			# try in price list
+		#	valuation_rate = frappe.db.get_value('Item Price',
+		#		dict(item_code=item_code, buying=1, currency=currency),
+		#		'price_list_rate')
+
+	return valuation_rate
+
+@frappe.whitelist()
+def getCostCenter(item):
+	data=frappe.db.sql("""select buying_cost_center from `tabItem` where name=%s""",item)
+	if data:
+		if not data[0][0]==None:
+			return data[0][0]
+		else:
+			return 'Sundine Main - .   - SP'
+	else:
+		return 'Sundine Main - .   - SP'
+		
+
+
+

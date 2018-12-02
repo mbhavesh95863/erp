@@ -21,6 +21,8 @@ erpnext.accounts.PurchaseInvoice = erpnext.buying.BuyingController.extend({
 			if(!this.frm.doc.supplier && this.frm.doc.credit_to) {
 				this.frm.set_df_property("credit_to", "print_hide", 0);
 			}
+		} else {
+			this.frm.set_value("disable_rounded_total", cint(frappe.sys_defaults.disable_rounded_total));
 		}
 	},
 
@@ -35,7 +37,7 @@ erpnext.accounts.PurchaseInvoice = erpnext.buying.BuyingController.extend({
 			this.show_stock_ledger();
 		}
 
-		if(!doc.is_return && doc.docstatus==1) {
+		if(doc.is_return==0 && doc.docstatus==1) {
 			if(doc.outstanding_amount != 0) {
 				this.frm.add_custom_button(__('Payment'), this.make_payment_entry, __("Make"));
 				cur_frm.page.set_inner_btn_group_as_primary(__("Make"));

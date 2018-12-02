@@ -122,6 +122,7 @@ class OpeningInvoiceCreationTool(Document):
 				"rate": rate or 0.0,
 				"qty": row.qty,
 				"conversion_factor": 1.0,
+				"item_code":'sundineopening',
 				"item_name": row.item_name or "Opening Invoice Item",
 				"description": row.item_name or "Opening Invoice Item",
 				income_expense_account_field: row.temporary_opening_account,

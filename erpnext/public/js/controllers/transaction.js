@@ -106,8 +106,7 @@ erpnext.TransactionController = erpnext.taxes_and_totals.extend({
 		}
 
 		if(
-			this.frm.docstatus < 2
-			&& this.frm.fields_dict["payment_terms_template"]
+			this.frm.fields_dict["payment_terms_template"]
 			&& this.frm.fields_dict["payment_schedule"]
 			&& this.frm.doc.payment_terms_template
 			&& !this.frm.doc.payment_schedule.length
@@ -401,7 +400,7 @@ erpnext.TransactionController = erpnext.taxes_and_totals.extend({
 				item.serial_no = valid_serial_nos.join('\n');
 
 				refresh_field("serial_no", item.name, item.parentfield);
-				if(!doc.is_return && cint(user_defaults.set_qty_in_transactions_based_on_serial_no_input)) {
+				if(!doc.is_return) {
 					frappe.model.set_value(item.doctype, item.name,
 						"qty", valid_serial_nos.length / item.conversion_factor);
 					frappe.model.set_value(item.doctype, item.name, "stock_qty", valid_serial_nos.length);
@@ -1094,8 +1093,6 @@ erpnext.TransactionController = erpnext.taxes_and_totals.extend({
 					me.in_apply_price_list = false;
 				}
 			}
-		}).always(() => {
-			me.in_apply_price_list = false;
 		});
 	},
 
